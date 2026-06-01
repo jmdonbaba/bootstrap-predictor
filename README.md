@@ -74,7 +74,7 @@ This captures **model uncertainty** — if the training data changed slightly, h
 ### Dependencies
 
 - Python ≥ 3.8
-- numpy ≥ 1.20, pandas ≥ 1.3, scikit-learn ≥ 1.0, matplotlib ≥ 3.4
+- numpy ≥ 1.21, pandas ≥ 1.3, scikit-learn ≥ 1.0, matplotlib ≥ 3.4
 
 ### License
 
@@ -152,7 +152,7 @@ bp.plot(result=result, sens_df=sens)
 ### 环境依赖
 
 - Python ≥ 3.8
-- numpy ≥ 1.20, pandas ≥ 1.3, scikit-learn ≥ 1.0, matplotlib ≥ 3.4
+- numpy ≥ 1.21, pandas ≥ 1.3, scikit-learn ≥ 1.0, matplotlib ≥ 3.4
 
 ### 开源协议
 

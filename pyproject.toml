@@ -9,15 +9,55 @@ description = "ML prediction with bootstrap confidence intervals — uncertainty
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.8"
+authors = [
+    {name = "jmdonbaba"},
+]
+keywords = [
+    "bootstrap",
+    "confidence-intervals",
+    "machine-learning",
+    "scikit-learn",
+    "uncertainty",
+    "prediction",
+    "regression",
+    "forecasting",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
 dependencies = [
-    "numpy>=1.20",
+    "numpy>=1.21",
     "pandas>=1.3",
     "scikit-learn>=1.0",
     "matplotlib>=3.4",
 ]
+
+[project.urls]
+Repository = "https://github.com/jmdonbaba/bootstrap-predictor"
 
 [project.optional-dependencies]
 dev = ["pytest>=7.0"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.ruff]
+target-version = "py38"
+line-length = 88
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP"]
+
+[tool.ruff.format]
+quote-style = "double"
+docstring-code-format = true

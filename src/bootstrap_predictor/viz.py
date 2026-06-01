@@ -1,10 +1,25 @@
 """Diagnostic plots for BootstrapPredictor — matplotlib only."""
 
-import numpy as np
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Optional
+
 import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+
+if TYPE_CHECKING:
+    from matplotlib.figure import Figure
+
+    from .predictor import BootstrapPredictor, PredictionResult
 
 
-def plot_predictor_report(predictor, result=None, sens_df=None, figsize=(12, 8)):
+def plot_predictor_report(
+    predictor: "BootstrapPredictor",
+    result: Optional["PredictionResult"] = None,
+    sens_df: Optional[pd.DataFrame] = None,
+    figsize: tuple[float, float] = (12, 8),
+) -> "Figure":
     """2-4 panel diagnostic report.
 
     Panels depend on what is provided:
@@ -13,6 +28,7 @@ def plot_predictor_report(predictor, result=None, sens_df=None, figsize=(12, 8))
     - Prediction with CI (if result is provided)
     - Sensitivity curve (if sens_df is provided)
     """
+
     n_panels = 1
     has_ci = result is not None
     has_sens = sens_df is not None
@@ -46,8 +62,14 @@ def plot_predictor_report(predictor, result=None, sens_df=None, figsize=(12, 8))
         ax.set_xlabel("Importance")
         ax.set_title("Feature Importance")
     except AttributeError:
-        ax.text(0.5, 0.5, "Not available", ha="center", va="center",
-                transform=ax.transAxes)
+        ax.text(
+            0.5,
+            0.5,
+            "Not available",
+            ha="center",
+            va="center",
+            transform=ax.transAxes,
+        )
         ax.set_title("Feature Importance (N/A)")
     panel += 1
 
@@ -59,19 +81,33 @@ def plot_predictor_report(predictor, result=None, sens_df=None, figsize=(12, 8))
         lo = result.ci_lower[:n_show, 0]
         hi = result.ci_upper[:n_show, 0]
         x = np.arange(n_show)
-        ax.errorbar(x, y, yerr=[y - lo, hi - y], fmt="o", capsize=3,
-                    markersize=5, elinewidth=1, color="steelblue")
+        ax.errorbar(
+            x,
+            y,
+            yerr=[y - lo, hi - y],
+            fmt="o",
+            capsize=3,
+            markersize=5,
+            elinewidth=1,
+            color="steelblue",
+        )
         ax.set_xlabel("Sample Index")
         ax.set_ylabel("Prediction")
-        ax.set_title(f"Predictions with {result.ci_level*100:.0f}% CI")
+        ax.set_title(f"Predictions with {result.ci_level * 100:.0f}% CI")
         ax.axhline(y=np.mean(y), color="gray", linestyle="--", alpha=0.5)
         panel += 1
 
     # ---- Panel 3: Sensitivity ----
     if has_sens:
         ax = axes[panel]
-        ax.plot(sens_df["pct"], sens_df["mean_abs_change"],
-                marker="o", markersize=3, linewidth=2, color="darkorange")
+        ax.plot(
+            sens_df["pct"],
+            sens_df["mean_abs_change"],
+            marker="o",
+            markersize=3,
+            linewidth=2,
+            color="darkorange",
+        )
         ax.set_xlabel("Perturbation (%)")
         ax.set_ylabel("Mean |Change| in Prediction")
         ax.set_title("Sensitivity Analysis")
