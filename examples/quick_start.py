@@ -3,19 +3,14 @@ BootstrapPredictor Quick Start — synthetic time series data.
 
 Scenario: Predict next year's sales for 10 stores using historical data.
 Demonstrates: train → CI prediction → sensitivity → CV.
+
+Run from the project root with:
+    pip install -e .
+    python examples/quick_start.py
 """
 
 import numpy as np
 import pandas as pd
-import sys
-import os
-import io
-
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
-
-import matplotlib
-matplotlib.use("Agg")
 
 from bootstrap_predictor import BootstrapPredictor
 

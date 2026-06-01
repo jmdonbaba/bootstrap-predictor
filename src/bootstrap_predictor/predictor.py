@@ -10,14 +10,21 @@ Workflow
 5. summary() / plot()                     → report & diagnostics
 """
 
+import logging
+import warnings
+
 import numpy as np
 import pandas as pd
+from sklearn.base import clone
 from sklearn.ensemble import RandomForestRegressor
-from sklearn.model_selection import TimeSeriesSplit
+from sklearn.inspection import permutation_importance as sk_permutation_importance
 from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
+from sklearn.model_selection import TimeSeriesSplit
 from dataclasses import dataclass, field
 
 from .viz import plot_predictor_report
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -63,7 +70,8 @@ class BootstrapPredictor:
         are supported.
     random_state : int, default=42
     n_jobs : int, default=-1
-        Parallel jobs for bootstrap training. -1 = all cores.
+        Parallel jobs for the default estimator and bootstrap training.
+        -1 = all cores.
     """
 
     def __init__(self, estimator=None, random_state=42, n_jobs=-1):
@@ -82,6 +90,11 @@ class BootstrapPredictor:
         self._y_train = None
         self._is_fitted = False
         self.cv_results_ = None
+
+    def __repr__(self):
+        est_name = type(self.estimator).__name__
+        state = "fitted" if self._is_fitted else "unfitted"
+        return f"BootstrapPredictor(estimator={est_name}, {state})"
 
     # ================================================================
     # Step 1: Train
@@ -106,7 +119,12 @@ class BootstrapPredictor:
         if self._y_train.ndim == 1:
             self._y_train = self._y_train.reshape(-1, 1)
 
-        self.estimator.fit(self._X_train, self._y_train)
+        self._validate_input(self._X_train, "X")
+        self._validate_input(self._y_train, "y")
+
+        self.estimator.fit(self._X_train, self._y_train.ravel()
+                          if self._y_train.shape[1] == 1
+                          else self._y_train)
         self._is_fitted = True
         return self
 
@@ -125,7 +143,7 @@ class BootstrapPredictor:
     def predict_with_ci(self, X, n_bootstrap=100, alpha=0.05):
         """Predict with bootstrap confidence intervals.
 
-        Trains n_bootstrap models on resampled training data,
+        Trains n_bootstrap cloned models on resampled training data,
         then computes percentile-based CIs from the ensemble.
 
         Requires fit() to have been called first (stores training data).
@@ -154,28 +172,34 @@ class BootstrapPredictor:
 
         boot_samples = np.zeros((n_bootstrap, n_new, n_targets))
         rng = np.random.RandomState(self.random_state)
-        y_flat = y_tr.ravel() if y_tr.shape[1] == 1 else y_tr
 
-        print(f"Bootstrapping: {n_bootstrap} iterations ", end="", flush=True)
+        logger.info("Bootstrapping: %d iterations", n_bootstrap)
         for i in range(n_bootstrap):
             idx = rng.choice(n_train, size=n_train, replace=True)
-            Xb, yb = X_tr[idx], y_flat[idx]
+            Xb = X_tr[idx]
+            yb = y_tr[idx]
+            if y_tr.shape[1] == 1:
+                yb = yb.ravel()
 
-            import warnings
+            m = clone(self.estimator)
+            try:
+                m.set_params(random_state=self.random_state + i)
+            except (ValueError, AttributeError):
+                pass
+
             with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
-                from sklearn.ensemble import RandomForestRegressor as RF
-                m = RF(n_estimators=100, max_depth=12, min_samples_leaf=5,
-                       random_state=self.random_state + i, n_jobs=self.n_jobs)
+                warnings.simplefilter("ignore", category=UserWarning)
                 m.fit(Xb, yb)
-                pb = m.predict(X_new)
+
+            pb = m.predict(X_new)
             if pb.ndim == 1:
                 pb = pb.reshape(-1, 1)
             boot_samples[i] = pb
 
-            if (i + 1) % 20 == 0:
-                print(".", end="", flush=True)
-        print(" done")
+            if (i + 1) % max(1, n_bootstrap // 5) == 0:
+                logger.info("  Bootstrap progress: %d/%d", i + 1, n_bootstrap)
+
+        logger.info("Bootstrapping complete (%d iterations).", n_bootstrap)
 
         lo = np.percentile(boot_samples, alpha / 2 * 100, axis=0)
         hi = np.percentile(boot_samples, (1 - alpha / 2) * 100, axis=0)
@@ -195,7 +219,8 @@ class BootstrapPredictor:
         """Return feature importance DataFrame.
 
         For tree-based models: mean decrease in impurity.
-        For linear models: absolute coefficient values.
+        For linear models (single-output): absolute coefficient values.
+        For multi-output linear models: use permutation_importance() instead.
         """
         self._check_fitted()
         names = self.feature_names_ or [f"X{i}" for i in range(self._n_features())]
@@ -203,7 +228,13 @@ class BootstrapPredictor:
         if hasattr(self.estimator, "feature_importances_"):
             imp = self.estimator.feature_importances_
         elif hasattr(self.estimator, "coef_"):
-            imp = np.abs(self.estimator.coef_).flatten()
+            coef = self.estimator.coef_
+            if coef.ndim == 2 and coef.shape[0] > 1:
+                raise AttributeError(
+                    "Multi-output linear model detected (coef_ is 2D). "
+                    "Use permutation_importance() for per-target importance."
+                )
+            imp = np.abs(coef).flatten()
         else:
             raise AttributeError(
                 "Estimator has no feature_importances_ or coef_. "
@@ -218,10 +249,14 @@ class BootstrapPredictor:
     def permutation_importance(self, X, y, n_repeats=5):
         """Permutation-based feature importance (works for any estimator)."""
         self._check_fitted()
-        from sklearn.inspection import permutation_importance as pi
-        names = self.feature_names_ or [f"X{i}" for i in range(self._to_array(X).shape[1])]
-        r = pi(self.estimator, self._to_array(X), y,
-               n_repeats=n_repeats, random_state=self.random_state, n_jobs=self.n_jobs)
+        X_arr = self._to_array(X)
+        y_arr = self._to_array(y)
+        names = self.feature_names_ or [f"X{i}" for i in range(X_arr.shape[1])]
+        r = sk_permutation_importance(
+            self.estimator, X_arr, y_arr,
+            n_repeats=n_repeats, random_state=self.random_state,
+            n_jobs=self.n_jobs,
+        )
         return pd.DataFrame({
             "feature": names,
             "importance_mean": r.importances_mean,
@@ -250,7 +285,7 @@ class BootstrapPredictor:
         """
         self._check_fitted()
         X_ref = self._to_array(X)
-        idx = self._resolve_feature_index(feature)
+        idx = self._resolve_feature_index(feature, X)
 
         base_pred = self.estimator.predict(X_ref)
         if base_pred.ndim == 1:
@@ -274,11 +309,12 @@ class BootstrapPredictor:
     def time_series_cv(self, X, y, n_splits=5):
         """Time series cross-validation (expanding window).
 
+        Uses clone(self.estimator) — respects the user's model choice.
+
         Returns
         -------
         pd.DataFrame with columns: fold, target, R2, RMSE, MAE
         """
-        # Trains from scratch per fold — does not use the stored estimator
         X = self._to_array(X)
         y = self._to_array(y)
         if y.ndim == 1:
@@ -292,11 +328,14 @@ class BootstrapPredictor:
             X_tr, X_te = X[tr_idx], X[te_idx]
             y_tr, y_te = y[tr_idx], y[te_idx]
 
-            m = RandomForestRegressor(
-                n_estimators=100, max_depth=12, min_samples_leaf=5,
-                random_state=self.random_state, n_jobs=self.n_jobs,
-            )
-            m.fit(X_tr, y_tr)
+            m = clone(self.estimator)
+            try:
+                m.set_params(random_state=self.random_state)
+            except (ValueError, AttributeError):
+                pass
+
+            m.fit(X_tr, y_tr.ravel() if y_tr.ndim == 2 and y_tr.shape[1] == 1
+                  else y_tr)
             y_pred = m.predict(X_te)
             if y_pred.ndim == 1:
                 y_pred = y_pred.reshape(-1, 1)
@@ -363,13 +402,20 @@ class BootstrapPredictor:
     # ================================================================
     def _check_fitted(self):
         if not self._is_fitted:
-            raise RuntimeError("Call .fit() or .fit_predict_with_ci() first")
+            raise RuntimeError("Call .fit() first")
 
     @staticmethod
     def _to_array(x):
         if hasattr(x, "values"):
             x = x.values
         return np.asarray(x, dtype=float)
+
+    @staticmethod
+    def _validate_input(arr, name="input"):
+        if arr.size == 0:
+            raise ValueError(f"{name} is empty")
+        if not np.isfinite(arr).all():
+            raise ValueError(f"{name} contains NaN or inf values")
 
     def _extract_names(self, obj, prefix="X"):
         if hasattr(obj, "columns"):
@@ -382,10 +428,20 @@ class BootstrapPredictor:
         if hasattr(self.estimator, "n_features_in_"):
             return self.estimator.n_features_in_
         if hasattr(self.estimator, "coef_"):
-            return self.estimator.coef_.shape[1]
+            return self.estimator.coef_.shape[-1]
         return 0
 
-    def _resolve_feature_index(self, feature):
-        if isinstance(feature, str) and self.feature_names_:
-            return self.feature_names_.index(feature)
+    def _resolve_feature_index(self, feature, X=None):
+        if isinstance(feature, str):
+            if X is not None and hasattr(X, "columns"):
+                try:
+                    return list(X.columns).index(feature)
+                except ValueError:
+                    pass
+            if self.feature_names_:
+                return self.feature_names_.index(feature)
+            raise ValueError(
+                f"Feature '{feature}' not found. "
+                f"Pass a DataFrame with named columns, or use a column index."
+            )
         return int(feature)

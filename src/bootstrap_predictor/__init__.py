@@ -15,7 +15,13 @@ result = bp.predict_with_ci(X_new, n_bootstrap=100)
 # result.point_estimate, result.ci_lower, result.ci_upper
 """
 
+from importlib.metadata import version, PackageNotFoundError
+
 from .predictor import BootstrapPredictor, PredictionResult
 
-__version__ = "0.1.0"
+try:
+    __version__ = version("bootstrap-predictor")
+except PackageNotFoundError:
+    __version__ = "0.0.0"
+
 __all__ = ["BootstrapPredictor", "PredictionResult"]

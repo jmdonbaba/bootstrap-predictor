@@ -19,7 +19,9 @@ def plot_predictor_report(predictor, result=None, sens_df=None, figsize=(12, 8))
     has_cv = predictor.cv_results_ is not None
     if has_ci:
         n_panels += 1
-    if has_sens or has_cv:
+    if has_sens:
+        n_panels += 1
+    if has_cv:
         n_panels += 1
 
     # Determine layout
@@ -65,7 +67,7 @@ def plot_predictor_report(predictor, result=None, sens_df=None, figsize=(12, 8))
         ax.axhline(y=np.mean(y), color="gray", linestyle="--", alpha=0.5)
         panel += 1
 
-    # ---- Panel 3/4: CV or Sensitivity ----
+    # ---- Panel 3: Sensitivity ----
     if has_sens:
         ax = axes[panel]
         ax.plot(sens_df["pct"], sens_df["mean_abs_change"],
@@ -75,7 +77,9 @@ def plot_predictor_report(predictor, result=None, sens_df=None, figsize=(12, 8))
         ax.set_title("Sensitivity Analysis")
         ax.grid(True, alpha=0.3)
         panel += 1
-    elif has_cv:
+
+    # ---- Panel 4: CV ----
+    if has_cv:
         ax = axes[panel]
         cv_s = predictor.cv_results_
         targets = cv_s["target"].unique()
